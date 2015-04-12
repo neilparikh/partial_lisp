@@ -1,0 +1,152 @@
+#!/usr/bin/env ruby
+
+require_relative "./lisp.rb/main"
+
+$let_vars_loc = 0
+$let_vars = [*'a'..'z'].map { |var| "let_" + var }.map { |var| var.to_sym }
+
+class Lamb
+  def arguements
+    @arguements
+  end
+
+  def body
+    @body
+  end
+end
+
+class Array
+  def deep_include?(to_find)
+    each do |el|
+      if el == to_find
+        return true
+      end
+      if el.class == Array
+        return el.deep_include?(to_find)
+      end
+    end
+    return false
+  end
+end
+
+def clone(a)
+  Marshal.load(Marshal.dump(a))
+end
+
+def letify(expr)
+  def recurse(exp, lets)
+    if exp[0] == :"get-int"
+      lets << exp
+      $let_vars_loc += 1
+      return $let_vars[$let_vars_loc-1]
+    end
+
+    if exp.class == Array
+      return exp.map { |unit| recurse(unit, lets) }
+    else
+      return exp
+    end
+  end
+  
+  lets = []
+  let_expr = recurse(expr, lets)
+  i = 0
+  let_defs = lets.map do |val|
+    i += 1
+    [$let_vars[i-1], val]
+  end
+
+  return [:let, let_defs, let_expr]
+end
+
+def simplify(expr)
+  return expr if expr.class != Array
+
+  if expr.deep_include?(:"get-int") && !expr.deep_include?(:let)
+    if expr[0] == :print
+      expr[1] = letify(expr[1])
+    else
+      expr = letify(expr)
+    end
+  end
+  if expr[0] == :define
+    expr[2] = env_expand(expr[2], $env)
+    if does_not_include_symbol?(expr[2])
+      my_eval(expr, $env)
+      expr[2] = $env[expr[1]]
+    end
+  elsif expr[0] == :"def-fun"
+    expr[2] = simplify(expr[2])
+    my_eval(expr, $env)
+  elsif expr[0] == :if
+    if does_not_include_symbol?(expr[1])
+      expr = my_eval(expr[1], $env) ? expr[2] : expr[3]
+    end
+  elsif $env[expr[0]].class == Lamb
+   expr = func_call_unroll(expr, $env)
+  elsif expr[0] == :print
+    expr[1] = simplify(expr[1])
+  elsif expr[0] == :"get-int"
+    return expr
+  elsif expr[0] == :let
+    expr[2] = simplify(expr[2])
+  else
+    if does_not_include_symbol?(expr)
+      expr = my_eval(expr, $env)
+    else
+      func_name = expr.shift
+      expr = expr.map { |unit| simplify(unit) }.unshift(func_name)
+    end
+  end
+  return expr
+end
+
+def env_expand(expr, env)
+  if expr.class == Symbol
+    if env.include?(expr) && env[expr].class != Proc && env[expr].class != Lamb
+      return env[expr]
+    else
+      return expr
+    end
+  elsif expr.class == Array
+    return expr.map { |unit| env_expand(unit, env) }
+  else
+    return expr
+  end
+end
+
+def does_not_include_symbol?(expr)
+  if expr.class == Array
+    expr[1..expr.length-1].all? { |unit| does_not_include_symbol?(unit) }
+  else
+    expr.class != Symbol
+  end
+end
+
+def func_call_unroll(expr, env)
+  func_name = expr.shift
+  expr = expr.map { |unit| env_expand(unit, env) }.unshift(func_name)
+  new_env = {}
+  func = env[func_name]
+  func.arguements.each_with_index do |arg, i|
+    new_env[arg] = expr[i+1]
+  end
+  func_expr = env_expand(func.body, env.merge(new_env))
+  if does_not_include_symbol?(func_expr)
+    expr = my_eval(func_expr, env.merge(new_env))
+  else
+    expr = func_expr
+  end
+  return expr
+end
+
+filename = ARGV[0]
+
+File.read(filename).split("\n").each do |expr|
+  expr = SXP.read(expr)
+  until expr == simplify(clone(expr))
+    $let_vars_loc = 0
+    expr = simplify(clone(expr))
+  end
+  puts SXP::Generator.string(expr)
+end

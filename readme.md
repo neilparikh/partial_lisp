@@ -1,7 +1,9 @@
 ## Usage
 
-1. git clone https://github.com/neilparikh/partial_lisp.git
-2. cd partial_lisp
-3. git clone https://github.com/neilparikh/lisp.rb.git
-5. gem install sxp
-4 . ./partial_eval example.lisp
+```
+$ git clone https://github.com/neilparikh/partial_lisp.git
+$ cd partial_lisp
+$ git clone https://github.com/neilparikh/lisp.rb.git
+$ gem install sxp
+$ ./partial_eval example.lisp
+```

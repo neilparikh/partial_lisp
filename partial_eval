@@ -27,6 +27,30 @@ class Array
     end
     return false
   end
+
+  def deep_count(to_find)
+    sum = 0
+    each do |el|
+      if el == to_find
+        sum += 1
+      elsif el.class == Array
+        sum += el.deep_count(to_find)
+      end
+    end
+    return sum
+  end
+
+  def deep_replace(orig, new)
+    map do |el|
+      if el == orig
+        new
+      elsif el.class == Array
+        el.deep_replace(orig, new)
+      else
+        el
+      end
+    end
+  end
 end
 
 def clone(a)
@@ -140,6 +164,26 @@ def func_call_unroll(expr, env)
   return expr
 end
 
+def remove_extra_lets(expr)
+  if expr[0] == :let
+    expr[1].each do |binding|
+      if expr[2].deep_count(binding[0]) == 1
+        expr[2] = expr[2].deep_replace(binding[0], binding[1])
+      end
+    end
+
+    expr[1] = expr[1].reject do |binding|
+      expr[2].deep_count(binding[0]) == 0
+    end
+
+    return expr[2] if expr[1] == []
+    return expr
+  else
+    func_name = expr.shift
+    return expr.map { |unit| remove_extra_lets(unit) }.unshift(func_name)
+  end
+end
+
 filename = ARGV[0]
 
 File.read(filename).split("\n").each do |expr|
@@ -147,6 +191,10 @@ File.read(filename).split("\n").each do |expr|
   until expr == simplify(clone(expr))
     $let_vars_loc = 0
     expr = simplify(clone(expr))
+  end
+
+  if expr.class == Array && expr.deep_include?(:let)
+    expr = remove_extra_lets(expr)
   end
   puts SXP::Generator.string(expr)
 end
